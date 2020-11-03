@@ -54,6 +54,8 @@ pub struct GlobalContext<'gcx> {
     ast_map: AstMap<'gcx>,
     /// The AST nodes.
     ast_map2: RefCell<HashMap<NodeId, &'gcx dyn ast::AnyNode<'gcx>>>,
+    /// The AST roots.
+    roots: RefCell<Vec<&'gcx ast::Root<'gcx>>>,
     /// The modules in the AST.
     modules: RefCell<HashMap<Name, NodeId>>,
     /// The packages in the AST.
@@ -78,6 +80,7 @@ impl<'gcx> GlobalContext<'gcx> {
             storage: Default::default(),
             ast_map: Default::default(),
             ast_map2: Default::default(),
+            roots: Default::default(),
             modules: Default::default(),
             packages: Default::default(),
             interfaces: Default::default(),
@@ -92,6 +95,11 @@ impl<'gcx> GlobalContext<'gcx> {
     /// Use the `find_global_item` function afterwards to look up the id of
     /// modules that were added.
     pub fn add_root(&self, root: &'gcx ast::Root<'gcx>) {
+        // Add the root node to the list of roots registered with this context,
+        // such that we can find them again afterwards.
+        self.roots.borrow_mut().push(root);
+
+        // Link up the AST. This establishes the parent back-arcs in the AST.
         debug!("Linking nodes");
         let mut index = 0;
         root.link(None, &mut index);
@@ -103,9 +111,11 @@ impl<'gcx> GlobalContext<'gcx> {
 
         // Register nodes with the AST map. This is a necessary hack until
         // we have moved away from querying nodes merely by ID.
+        // TODO(fschuiki): Remove this once we no longer look for AST nodes
+        // based on their ID.
         self.register_ast(root);
 
-        // Resolve names for debugging purposes.
+        // Check for name conflicts.
         debug!("Checking names");
         self.nameck(root);
 
@@ -150,6 +160,11 @@ impl<'gcx> GlobalContext<'gcx> {
         );
         let root = self.arena.alloc_ast_root(root);
         self.add_root(root);
+    }
+
+    /// Get an iterator over all roots in the AST.
+    pub fn roots(&self) -> impl Iterator<Item = &'gcx ast::Root<'gcx>> {
+        self.roots.borrow().clone().into_iter()
     }
 
     /// Find a module in the AST.
