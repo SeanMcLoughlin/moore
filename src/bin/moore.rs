@@ -63,6 +63,7 @@ fn main() {
                     "consts",
                     "insts",
                     "func-args",
+                    "call-args",
                 ])
                 .global(true),
         )
@@ -159,6 +160,7 @@ fn main() {
             "consts" => Verbosity::CONSTS,
             "insts" => Verbosity::INSTS,
             "func-args" => Verbosity::FUNC_ARGS,
+            "call-args" => Verbosity::CALL_ARGS,
             _ => unreachable!(),
         };
     }
@@ -321,6 +323,15 @@ fn score(sess: &Session, matches: &ArgMatches) {
         for root in ctx.svlog.roots() {
             if ctx.sess.has_verbosity(Verbosity::FUNC_ARGS) {
                 root.accept(&mut svlog::func_args::FuncArgsVerbosityVisitor::new(
+                    ctx.svlog,
+                ));
+            }
+        }
+
+        // Emit the call argument mappings if requested.
+        for root in ctx.svlog.roots() {
+            if ctx.sess.has_verbosity(Verbosity::CALL_ARGS) {
+                root.accept(&mut svlog::call_mapping::CallMappingVerbosityVisitor::new(
                     ctx.svlog,
                 ));
             }
