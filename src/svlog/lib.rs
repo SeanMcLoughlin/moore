@@ -271,8 +271,7 @@ mod queries {
     use crate::{
         call_mapping::*,
         func_args::*,
-        hir::lowering::*,
-        hir::{accessed_nodes, AccessTable},
+        hir::{accessed_nodes, lowering::*, AccessTable, HirNode},
         inst_details::*,
         mir::lower::assign::{
             mir_assignment_from_concurrent, mir_assignment_from_procedural, mir_simplify_assignment,

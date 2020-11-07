@@ -734,12 +734,6 @@ pub(super) mod queries {
     query_group! {
         /// A collection of compiler queries.
         pub trait Context<'a>: BaseContext<'a> {
-            /// Lower an AST node to HIR.
-            fn hir_of(node_id: NodeId) -> Result<HirNode<'a>> {
-                type HirOfQuery;
-                use fn hir::hir_of;
-            }
-
             /// Compute the parameter bindings for an instantiation.
             fn param_env(src: ParamEnvSource<'a>) -> Result<ParamEnv> {
                 type ParamEnvQuery;
@@ -806,7 +800,6 @@ pub(super) mod queries {
         /// The query result storage embedded in the global context.
         pub struct GlobalStorage<'gcx> for GlobalContext<'gcx> {
             impl Context<'gcx> {
-                fn hir_of() for HirOfQuery<'gcx>;
                 fn param_env() for ParamEnvQuery<'gcx>;
                 fn local_rib() for LocalRibQuery<'gcx>;
                 fn hierarchical_rib() for HierarchicalRibQuery<'gcx>;
