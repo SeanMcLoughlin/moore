@@ -1006,10 +1006,9 @@ fn apply_unpacked_dims<'a>(
 #[moore_derive::query]
 pub(crate) fn type_of_expr<'a>(
     cx: &impl Context<'a>,
-    expr: Ref<'a, hir::Expr<'a>>,
+    Ref(expr): Ref<'a, hir::Expr<'a>>,
     env: ParamEnv,
 ) -> &'a UnpackedType<'a> {
-    let Ref(expr) = expr;
     match expr.kind {
         // These expressions have a fully self-determined type.
         hir::ExprKind::IntConst { .. }
@@ -1037,7 +1036,7 @@ pub(crate) fn type_of_expr<'a>(
         // Unsized constants infer their type from the context if possible, and
         // otherwise fall back to a self-determined mode.
         hir::ExprKind::UnsizedConst(..) => cx
-            .type_context(expr.id, env)
+            .type_context(Ref(expr), env)
             .and_then(|x| x.ty().get_simple_bit_vector())
             .map(|x| x.to_unpacked(cx))
             .unwrap_or_else(|| cx.need_self_determined_type(expr.id, env)),
@@ -1111,7 +1110,7 @@ pub(crate) fn type_of_expr<'a>(
         // Pattern expressions require a type context.
         hir::ExprKind::PositionalPattern(..)
         | hir::ExprKind::NamedPattern(..)
-        | hir::ExprKind::RepeatPattern(..) => cx.need_type_context(expr.id, env).ty(),
+        | hir::ExprKind::RepeatPattern(..) => cx.need_type_context(Ref(expr), env).ty(),
     }
 }
 
@@ -1191,7 +1190,7 @@ fn cast_expr_type_inner<'gcx>(
 
     // Determine the inferred type and type context of the expression.
     let inferred = cx.type_of_expr(Ref(expr), env);
-    let context = cx.type_context(expr.id, env);
+    let context = cx.type_context(Ref(expr), env);
     trace!("  Inferred: {}", inferred);
     trace!(
         "  Context:  {}",
@@ -1955,6 +1954,7 @@ pub(crate) fn operation_type<'a>(
         HirNode::Expr(x) => x,
         _ => return None,
     };
+    let node = expr.ast;
     match expr.kind {
         // Unary operators all have an inherent operation type.
         hir::ExprKind::Unary(op, arg) => {
@@ -1974,7 +1974,7 @@ pub(crate) fn operation_type<'a>(
                 | hir::UnaryOp::PreDec
                 | hir::UnaryOp::PostInc
                 | hir::UnaryOp::PostDec => {
-                    let tc = cx.type_context(node_id, env).map(|x| x.ty());
+                    let tc = cx.type_context(Ref(node), env).map(|x| x.ty());
                     let targ = cx.self_determined_type(arg, env);
                     unify_operator_types(cx, env, tc.into_iter().chain(targ.into_iter()))
                 }
@@ -2015,7 +2015,7 @@ pub(crate) fn operation_type<'a>(
                 | hir::BinaryOp::BitNor
                 | hir::BinaryOp::BitXor
                 | hir::BinaryOp::BitXnor => {
-                    let tc = cx.type_context(node_id, env).map(|x| x.ty());
+                    let tc = cx.type_context(Ref(node), env).map(|x| x.ty());
                     let tlhs = cx.self_determined_type(lhs, env);
                     let trhs = cx.self_determined_type(rhs, env);
                     unify_operator_types(
@@ -2057,7 +2057,7 @@ pub(crate) fn operation_type<'a>(
                 | hir::BinaryOp::LogicShR
                 | hir::BinaryOp::ArithShL
                 | hir::BinaryOp::ArithShR => {
-                    let tc = cx.type_context(node_id, env).map(|x| x.ty());
+                    let tc = cx.type_context(Ref(node), env).map(|x| x.ty());
                     let sdt = cx.self_determined_type(lhs, env);
                     unify_operator_types(cx, env, tc.into_iter().chain(sdt.into_iter()))
                 }
@@ -2084,7 +2084,7 @@ pub(crate) fn operation_type<'a>(
         // Ternary operators operate on the maximum bitwidth given by their
         // arguments (self-determined type) and the type context.
         hir::ExprKind::Ternary(_, lhs, rhs) => {
-            let tc = cx.type_context(node_id, env).map(|x| x.ty());
+            let tc = cx.type_context(Ref(node), env).map(|x| x.ty());
             let tlhs = cx.self_determined_type(lhs, env);
             let trhs = cx.self_determined_type(rhs, env);
             unify_operator_types(
@@ -2207,9 +2207,10 @@ pub(crate) fn need_operation_type<'a>(
 #[moore_derive::query]
 pub(crate) fn type_context<'a>(
     cx: &impl Context<'a>,
-    onto: NodeId,
+    Ref(onto): Ref<'a, ast::Expr<'a>>,
     env: ParamEnv,
 ) -> Option<TypeContext<'a>> {
+    let onto = onto.id();
     let hir_id = cx.parent_node_id(onto).unwrap();
     let hir = match cx.hir_of(hir_id) {
         Ok(x) => x,
@@ -2289,24 +2290,20 @@ pub(crate) fn type_context<'a>(
 #[moore_derive::query]
 pub(crate) fn need_type_context<'a>(
     cx: &impl Context<'a>,
-    node_id: NodeId,
+    Ref(node): Ref<'a, ast::Expr<'a>>,
     env: ParamEnv,
 ) -> TypeContext<'a> {
-    match cx.type_context(node_id, env) {
+    match cx.type_context(Ref(node), env) {
         Some(ty) => ty,
         None => {
-            let extract = cx.span(node_id).extract();
-            let desc = cx
-                .ast_of(node_id)
-                .map(|x| x.desc_full())
-                .unwrap_or_else(|_| format!("`{}`", extract));
+            let extract = node.span().extract();
             cx.emit(
-                DiagBuilder2::error(format!("type of {} cannot be inferred from context", desc))
-                    .span(cx.span(node_id))
+                DiagBuilder2::error(format!("cannot infer type from context: {}", node))
+                    .span(node.span())
                     .add_note(format!(
                         "The type of {} must be inferred from context, but the location where you \
                          used it does not provide such information.",
-                        desc
+                        node
                     ))
                     .add_note(format!("Try a cast: `T'({})`", extract)),
             );
